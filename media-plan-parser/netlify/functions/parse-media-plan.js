@@ -180,15 +180,24 @@ function authHeader() {
 
 async function findLatestSpreadsheet(ticketId) {
   const sub = process.env.ZENDESK_SUBDOMAIN;
+  if (typeof fetch !== 'function') throw new Error('global fetch unavailable in this runtime');
   let url = `https://${sub}.zendesk.com/api/v2/tickets/${ticketId}/comments.json?page[size]=100`;
   let match = null; // {url, name, created}
+  let commentCount = 0, attachmentCount = 0;
   // walk comments (paginated); later comments are more recent
   while (url) {
     const res = await fetch(url, { headers: { Authorization: authHeader() } });
-    if (!res.ok) throw new Error(`Zendesk comments fetch failed (${res.status})`);
+    console.log(`comments fetch -> status ${res.status}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Zendesk comments fetch failed (${res.status}): ${body.slice(0, 200)}`);
+    }
     const data = await res.json();
     for (const c of data.comments || []) {
+      commentCount++;
       for (const a of c.attachments || []) {
+        attachmentCount++;
+        console.log(`  attachment: ${a.file_name}`);
         if (/\.(xlsx|xls|csv)$/i.test(a.file_name || '')) {
           match = { url: a.content_url, name: a.file_name, created: c.created_at };
         }
@@ -196,14 +205,20 @@ async function findLatestSpreadsheet(ticketId) {
     }
     url = data.meta && data.meta.has_more ? data.links.next : null;
   }
+  console.log(`scanned ${commentCount} comments, ${attachmentCount} attachments; spreadsheet match: ${match ? match.name : 'none'}`);
   return match;
 }
 
 async function downloadBuffer(contentUrl) {
   // content_url often redirects to signed storage; fetch follows redirects by default
   const res = await fetch(contentUrl, { headers: { Authorization: authHeader() } });
-  if (!res.ok) throw new Error(`Attachment download failed (${res.status})`);
+  console.log(`attachment download -> status ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Attachment download failed (${res.status}): ${body.slice(0, 200)}`);
+  }
   const ab = await res.arrayBuffer();
+  console.log(`downloaded ${ab.byteLength} bytes`);
   return Buffer.from(ab);
 }
 
@@ -227,6 +242,12 @@ exports.handler = async (event) => {
   try {
     const { ticketId } = JSON.parse(event.body || '{}');
     if (!ticketId) throw new Error('Missing ticketId');
+    console.log(`=== parse request for ticket ${ticketId} ===`);
+
+    // surface missing configuration clearly instead of failing deep in a fetch
+    const missing = ['ZENDESK_SUBDOMAIN', 'ZENDESK_EMAIL', 'ZENDESK_API_TOKEN']
+      .filter((k) => !process.env[k]);
+    if (missing.length) throw new Error(`Missing env vars: ${missing.join(', ')}`);
 
     const file = await findLatestSpreadsheet(ticketId);
     if (!file)
@@ -235,6 +256,7 @@ exports.handler = async (event) => {
 
     const buf = await downloadBuffer(file.url);
     const wb = XLSX.read(buf, { type: 'buffer', cellDates: true });
+    console.log(`workbook opened; tabs: ${wb.SheetNames.join(', ')}`);
 
     // choose the tab with the highest spend
     const warnings = [];
@@ -261,6 +283,7 @@ exports.handler = async (event) => {
       return { statusCode: 200, headers: CORS,
         body: JSON.stringify({ ok: false, error: 'No parseable tab (no header row found in any tab).', fileName: file.name }) };
 
+    console.log(`chosen tab "${best.name}", spend ${best.spend}, ${best.parsed.lineItems.length} line items`);
     return {
       statusCode: 200, headers: CORS,
       body: JSON.stringify({
@@ -275,6 +298,10 @@ exports.handler = async (event) => {
       }),
     };
   } catch (err) {
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: false, error: err.message }) };
+    // never return a blank error; log full detail to the function console
+    const message = (err && (err.message || String(err))) || 'Unknown error';
+    console.error('PARSE ERROR:', message);
+    if (err && err.stack) console.error(err.stack);
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: false, error: message }) };
   }
 };
