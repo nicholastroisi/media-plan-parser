@@ -1,0 +1,9 @@
+{
+  "name": "media-plan-parser-function",
+  "version": "1.0.0",
+  "description": "Netlify function that fetches a Zendesk ticket's media plan spreadsheet and returns parsed line items.",
+  "private": true,
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  }
+}
