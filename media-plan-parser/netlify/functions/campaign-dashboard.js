@@ -150,7 +150,8 @@ async function fetchCampaignTickets() {
   const formId = process.env.CAMPAIGN_FORM_ID;
   // active campaigns: this form, not closed. (custom statuses still roll up to a base category)
   const query = `type:ticket ticket_form_id:${formId} -status:closed`;
-  let url = `https://${sub}.zendesk.com/api/v2/search.json?query=${encodeURIComponent(query)}&page[size]=100`;
+  const base = `https://${sub}.zendesk.com/api/v2/search.json?query=${encodeURIComponent(query)}&per_page=100`;
+  let url = base;
   const tickets = [];
   let pages = 0;
   while (url && pages < 10) {
@@ -162,7 +163,7 @@ async function fetchCampaignTickets() {
     }
     const data = await res.json();
     for (const t of data.results || []) tickets.push(t);
-    url = data.meta && data.meta.has_more ? data.links.next : null;
+    url = data.next_page || null; // Search API uses next_page (page-number style)
     pages++;
   }
   console.log(`fetched ${tickets.length} campaign tickets`);
