@@ -28,13 +28,16 @@ const BUDGET_FORBIDDEN = ['rate', 'net rate', 'rate type', 'cpm'];
 const TERMINATORS = ['total', 'grand total', 'notes', 'terms and conditions'];
 
 // ---------- value coercion helpers ----------
+// Zendesk numeric (decimal) custom fields reject long/fractional values, so we
+// round budget and impressions to whole numbers. Impressions are inherently
+// integers anyway, and budgets to the nearest dollar are fine for this use.
 function cleanNumber(v) {
   if (v === null || v === undefined) return null;
   let s = String(v).trim();
   if (s === '' || s === '-') return null;
   s = s.replace(/[$,\s]/g, '');
   const n = parseFloat(s);
-  return Number.isFinite(n) ? n : null;
+  return Number.isFinite(n) ? Math.round(n) : null;
 }
 
 function pad(n) { return String(n).padStart(2, '0'); }
