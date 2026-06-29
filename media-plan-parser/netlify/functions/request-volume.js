@@ -115,6 +115,7 @@ async function fetchTicketsSince(sub, startTimeUnix, wantedFormIds) {
     const data = await res.json();
     for (const t of data.tickets || []) {
       scanned++;
+      if (t.status === 'deleted') continue;             // Zendesk streams deleted/scrubbed tickets; drop them
       if (!wantedFormIds.has(t.ticket_form_id)) continue; // classify by FORM
       if (!t.created_at) continue;
       out.push({
