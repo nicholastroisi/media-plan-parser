@@ -113,7 +113,8 @@ async function load(){
 }
 
 function sum(cells){return cells.reduce((a,c)=>a+c.count,0);}
-function brandKey(b){return b.toLowerCase().includes('insight')?'insights':'measurement';}
+// Measurement is the only "measurement" brand; everything else (Vevo Research, Vevo Insights) is the Insights line.
+function brandKey(b){return (b||'').toLowerCase().includes('measurement')?'measurement':'insights';}
 
 function render(){
   const d=DATA;
