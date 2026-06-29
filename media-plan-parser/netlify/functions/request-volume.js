@@ -65,7 +65,7 @@ async function resolveBrandIds(sub) {
 // Incremental export (cursor) — pages of up to 1000, no 1000-result search cap
 async function fetchTicketsSince(sub, startTimeUnix, wantedBrandIds) {
   let url = `https://${sub}.zendesk.com/api/v2/incremental/tickets/cursor.json?start_time=${startTimeUnix}`;
-  const out = []; let pages = 0; let capped = false;
+  const out = []; let pages = 0; let capped = false; let deletedSkipped = 0;
   while (url) {
     if (pages >= MAX_PAGES) { capped = true; break; }
     const res = await fetch(url, { headers: { Authorization: authHeader() } });
@@ -73,6 +73,7 @@ async function fetchTicketsSince(sub, startTimeUnix, wantedBrandIds) {
     const data = await res.json();
     for (const t of data.tickets || []) {
       if (!wantedBrandIds.has(t.brand_id)) continue;
+      if (t.status === 'deleted') { deletedSkipped++; continue; } // incremental export includes deleted tickets
       if (!t.requester_id || !t.created_at) continue;
       // Vertical: prefer the multi-select custom field value; fall back to vert_* tags.
       let verticals = [];
@@ -88,7 +89,7 @@ async function fetchTicketsSince(sub, startTimeUnix, wantedBrandIds) {
     if (data.end_of_stream || !data.after_cursor) break;
     url = `https://${sub}.zendesk.com/api/v2/incremental/tickets/cursor.json?cursor=${encodeURIComponent(data.after_cursor)}`;
   }
-  console.log(`incremental: ${pages} page(s), ${out.length} tickets in wanted brands${capped ? ' (CAPPED)' : ''}`);
+  console.log(`incremental: ${pages} page(s), ${out.length} tickets in wanted brands, ${deletedSkipped} deleted skipped${capped ? ' (CAPPED)' : ''}`);
   return { tickets: out, capped };
 }
 
