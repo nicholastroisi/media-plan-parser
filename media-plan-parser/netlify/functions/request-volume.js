@@ -1,6 +1,7 @@
 // request-volume.js
-// Read-only leadership function: counts request VOLUME for the Vevo Insights and
-// Vevo Measurement brands, broken down by calendar quarter x office x role.
+// Read-only leadership function: counts request VOLUME for the Vevo Insights line
+// (served by the "Vevo Research" brand, plus the legacy "Vevo Insights" brand) and the
+// "Vevo Measurement" brand, broken down by calendar quarter x office x role.
 //
 // Office and role come from the REQUESTER'S USER PROFILE FIELDS (not ticket tags),
 // because Zendesk does not retroactively tag old tickets when a user's tags change.
@@ -9,7 +10,7 @@
 // Reuses env vars: ZENDESK_SUBDOMAIN, ZENDESK_EMAIL, ZENDESK_API_TOKEN, PARSER_SHARED_SECRET
 // Gated by X-Parser-Secret.
 
-const BRAND_NAMES = ['Vevo Insights', 'Vevo Measurement']; // only these two are counted
+const BRAND_NAMES = ['Vevo Research', 'Vevo Insights', 'Vevo Measurement']; // Research (+ legacy Insights) = "Insights"; Measurement = "Measurement"
 const QUARTERS_BACK = 6;            // how many recent calendar quarters to include
 const OFFICE_FIELD = 'office';      // user_fields key for Sales Region
 const ROLE_FIELD = 'role_level';    // user_fields key for Role Level
