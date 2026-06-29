@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Campaign Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f4f1ea;--panel:#fbfaf6;--ink:#1c1b19;--ink-soft:#5c574e;
+    --line:#e2ddd1;--line-strong:#cfc8b8;--accent:#e2533b;--today:#e2533b;
+    --shadow:0 1px 2px rgba(28,27,25,.06),0 8px 24px rgba(28,27,25,.06);
+    --s-open:#8a8478;--s-feas:#6b6cd6;--s-media:#138a8a;--s-id:#2f72c4;
+    --s-live:#2f9e52;--s-camp-done:#b07d1c;--s-report:#d98324;--s-report-done:#8e54c4;
+    --s-deliver:#1f7a4d;--s-attention:#d23b34;--s-default:#8a8478;
+    --px-day:3.4;--label-w:330px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(140% 120% at 12% -10%,#faf8f2 0%,var(--paper) 46%) fixed;
+    color:var(--ink);font-family:"IBM Plex Sans",sans-serif;-webkit-font-smoothing:antialiased;}
+  .top{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:24px 30px 16px;}
+  h1{font-family:"Bricolage Grotesque";font-weight:800;letter-spacing:-.02em;font-size:28px;margin:0;line-height:1;}
+  .sub{color:var(--ink-soft);font-size:13px;margin-top:6px;}
+  .meta{display:flex;align-items:center;gap:12px;font-size:12px;color:var(--ink-soft);font-family:"IBM Plex Mono";}
+  .count-pill{background:var(--ink);color:var(--paper);border-radius:999px;padding:5px 12px;font-weight:600;font-family:"IBM Plex Sans";}
+  button.btn{font-family:"IBM Plex Sans";font-weight:600;font-size:13px;cursor:pointer;background:var(--panel);
+    border:1px solid var(--line-strong);border-radius:8px;padding:8px 13px;color:var(--ink);transition:.15s;}
+  button.btn:hover{background:#fff;border-color:var(--ink-soft);}
+  /* control bar */
+  .bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:12px 30px;
+    border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:rgba(255,255,255,.35);}
+  .toggle{display:inline-flex;border:1px solid var(--line-strong);border-radius:9px;overflow:hidden;}
+  .toggle button{border:0;background:transparent;padding:7px 15px;font-family:"IBM Plex Sans";font-weight:600;
+    font-size:13px;cursor:pointer;color:var(--ink-soft);}
+  .toggle button.active{background:var(--ink);color:var(--paper);}
+  .search{flex:0 0 230px;padding:8px 11px;border:1px solid var(--line-strong);border-radius:8px;
+    font-family:"IBM Plex Sans";font-size:13px;}
+  .filtgroup{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+  .filtgroup .lbl{font-family:"IBM Plex Mono";font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);margin-right:2px;}
+  .fchip{font-size:12px;border:1px solid var(--line-strong);background:var(--panel);border-radius:999px;
+    padding:5px 11px;cursor:pointer;user-select:none;display:inline-flex;align-items:center;gap:6px;transition:.12s;}
+  .fchip .dot{width:9px;height:9px;border-radius:3px;}
+  .fchip.on{border-color:var(--ink);background:#fff;font-weight:600;}
+  .fchip.off{opacity:.55;}
+  .clear{font-size:12px;color:var(--accent);cursor:pointer;font-weight:600;}
+  /* table */
+  .tablewrap{padding:0 30px 50px;overflow-x:auto;}
+  table.grid{width:100%;border-collapse:collapse;margin-top:14px;font-size:13px;}
+  table.grid th{text-align:left;font-family:"IBM Plex Mono";font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ink-soft);font-weight:600;padding:8px 12px;border-bottom:1.5px solid var(--line-strong);white-space:nowrap;cursor:pointer;}
+  table.grid th .arr{opacity:.4;font-size:9px;}
+  table.grid td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top;}
+  tr.crow{cursor:pointer;}
+  tr.crow:hover td{background:#fff;}
+  .tkt{font-family:"IBM Plex Mono";font-size:11.5px;color:var(--ink-soft);white-space:nowrap;}
+  .cname{font-weight:600;line-height:1.3;max-width:340px;}
+  .status-tag{display:inline-block;font-size:11px;font-weight:600;color:#fff;border-radius:5px;padding:2px 9px;white-space:nowrap;}
+  .ptag{display:inline-block;font-size:10.5px;background:var(--paper);border:1px solid var(--line-strong);
+    border-radius:5px;padding:1px 7px;margin:1px 3px 1px 0;color:var(--ink-soft);}
+  .nums{font-family:"IBM Plex Mono";font-size:12px;white-space:nowrap;}
+  .muted{color:var(--ink-soft);}
+  .vendor-na{color:var(--line-strong);font-family:"IBM Plex Mono";font-size:11px;}
+  .vcell{display:flex;flex-wrap:wrap;align-items:center;gap:4px;max-width:230px;}
+  .vchip{font-size:10.5px;border:1px solid var(--line-strong);background:var(--paper);border-radius:5px;
+    padding:2px 7px;cursor:pointer;user-select:none;color:var(--ink-soft);transition:.12s;}
+  .vchip.on{background:var(--s-deliver);border-color:var(--s-deliver);color:#fff;font-weight:600;}
+  .vsave{font-size:10.5px;font-weight:600;border:0;border-radius:5px;padding:3px 9px;cursor:pointer;
+    background:var(--ink);color:var(--paper);}
+  .vsave:disabled{opacity:.35;cursor:default;}
+  .vmsg{font-size:10.5px;font-family:"IBM Plex Mono";color:var(--ink-soft);margin-left:2px;}
+  .vmsg.ok{color:var(--s-deliver);}.vmsg.bad{color:var(--accent);}
+  /* sponsorship detail */
+  tr.detail td{background:rgba(0,0,0,.015);padding:0;}
+  .det-inner{padding:6px 12px 12px 40px;}
+  table.sub{width:100%;border-collapse:collapse;font-size:12px;}
+  table.sub th{font-family:"IBM Plex Mono";font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-soft);text-align:left;padding:5px 10px;font-weight:600;}
+  table.sub td{padding:5px 10px;border-top:1px solid var(--line);font-family:"IBM Plex Mono";font-size:11.5px;}
+  table.sub td.nm{font-family:"IBM Plex Sans";font-size:12px;}
+  /* timeline (reused) */
+  .legend{display:flex;flex-wrap:wrap;gap:8px 16px;padding:12px 30px;font-size:12px;color:var(--ink-soft);align-items:center;}
+  .legend .chip{display:inline-flex;align-items:center;gap:7px}.legend .dot{width:11px;height:11px;border-radius:3px}
+  .chart-wrap{overflow-x:auto;padding:0 0 40px}.chart{position:relative;min-width:max-content}
+  .axis{position:sticky;top:0;z-index:6;display:flex;background:var(--paper);border-bottom:1px solid var(--line-strong);height:38px}
+  .axis .corner{width:var(--label-w);flex:0 0 var(--label-w);position:sticky;left:0;z-index:7;background:var(--paper);
+    border-right:1px solid var(--line-strong);display:flex;align-items:center;padding-left:30px;font-family:"IBM Plex Mono";
+    font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft)}
+  .axis .months{position:relative;flex:1}
+  .month-tick{position:absolute;top:0;height:38px;border-left:1px solid var(--line);padding:11px 0 0 7px;
+    font-family:"IBM Plex Mono";font-size:11px;color:var(--ink-soft);white-space:nowrap}
+  .grid-line{position:absolute;top:0;bottom:0;border-left:1px solid var(--line);z-index:0}
+  .today-line{position:absolute;top:0;bottom:0;width:2px;background:var(--today);z-index:5}
+  .today-flag{position:absolute;top:0;transform:translateX(-50%);background:var(--today);color:#fff;font-family:"IBM Plex Mono";
+    font-size:10px;font-weight:600;padding:2px 6px;border-radius:0 0 5px 5px;white-space:nowrap;z-index:6}
+  .trow{display:flex;align-items:stretch;min-height:46px;border-bottom:1px solid var(--line);position:relative}
+  .trow:hover .tlabel{background:#fff}
+  .tlabel{width:var(--label-w);flex:0 0 var(--label-w);position:sticky;left:0;z-index:4;background:var(--panel);
+    border-right:1px solid var(--line-strong);padding:8px 14px 8px 30px;display:flex;flex-direction:column;justify-content:center;gap:3px;cursor:pointer}
+  .tlabel .tkt{display:flex;align-items:center;gap:6px}.caret{transition:transform .15s;font-size:9px;color:var(--ink-soft)}
+  .trow.open .caret{transform:rotate(90deg)}
+  .tlabel .nm{font-size:13px;font-weight:600;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .lane{position:relative;flex:1}
+  .tbar{position:absolute;top:50%;transform:translateY(-50%);height:20px;border-radius:6px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);
+    display:flex;align-items:center;padding:0 8px;overflow:hidden}
+  .tbar .pill-status{font-size:10.5px;font-weight:600;color:#fff;white-space:nowrap;text-shadow:0 1px 1px rgba(0,0,0,.18)}
+  .subrow{display:flex;min-height:30px;background:rgba(255,255,255,.4);border-bottom:1px solid var(--line)}
+  .subrow .tlabel{background:transparent;padding:4px 14px 4px 46px;cursor:default}
+  .subrow .sname{font-size:11px;color:var(--ink-soft);line-height:1.2;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+  .subbar{position:absolute;top:50%;transform:translateY(-50%);height:11px;border-radius:4px;opacity:.78}
+  /* misc */
+  .nodates{padding:18px 30px 40px}.nodates h2{font-family:"Bricolage Grotesque";font-weight:700;font-size:14px;margin:0 0 4px}
+  .nodates p{color:var(--ink-soft);font-size:12px;margin:0 0 12px}
+  .statusmsg{padding:40px 30px;color:var(--ink-soft);font-size:14px}.statusmsg.bad{color:var(--accent)}
+  .gate{position:fixed;inset:0;background:rgba(28,27,25,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:50}
+  .gate .box{background:var(--panel);border:1px solid var(--line-strong);border-radius:14px;box-shadow:var(--shadow);padding:26px;width:360px}
+  .gate h3{font-family:"Bricolage Grotesque";font-weight:700;margin:0 0 6px;font-size:18px}
+  .gate p{font-size:12.5px;color:var(--ink-soft);margin:0 0 16px}
+  .gate input{width:100%;padding:10px 12px;border:1px solid var(--line-strong);border-radius:8px;font-family:"IBM Plex Mono";font-size:13px;margin-bottom:12px}
+  .gate button{width:100%;background:var(--ink);color:var(--paper);border:0;border-radius:8px;padding:11px;font-weight:600;font-size:14px;cursor:pointer}
+  #tip{position:fixed;z-index:60;pointer-events:none;background:var(--ink);color:var(--paper);font-size:11.5px;line-height:1.5;
+    padding:8px 10px;border-radius:7px;box-shadow:var(--shadow);max-width:280px;opacity:0;transition:opacity .1s}
+  #tip .t-name{font-weight:600;margin-bottom:3px}#tip .t-row{font-family:"IBM Plex Mono";font-size:10.5px;color:#d9d2c4}
+</style>
+</head>
+<body>
+  <div class="top">
+    <div><h1>Campaign Tracker</h1><div class="sub">Campaigns, statuses, products and flight dates — piped from Zendesk.</div></div>
+    <div class="meta"><span id="genAt"></span><span class="count-pill" id="countPill">—</span><button class="btn" id="refreshBtn">Refresh</button></div>
+  </div>
+  <div class="bar">
+    <div class="toggle"><button id="vTable" class="active">Table</button><button id="vTime">Timeline</button></div>
+    <input class="search" id="search" placeholder="Search campaign or ticket #" />
+    <div class="filtgroup" id="statusFilters"><span class="lbl">Status</span></div>
+    <div class="filtgroup" id="productFilters"><span class="lbl">Product</span></div>
+    <span class="clear" id="clearF">clear filters</span>
+  </div>
+  <div id="main"><div class="statusmsg">Loading…</div></div>
+
+  <div class="gate" id="gate" style="display:none">
+    <div class="box"><h3>Enter access key</h3>
+      <p>This dashboard shows campaign and budget data. Paste the shared secret to load it.</p>
+      <input type="password" id="secretIn" placeholder="shared secret" autofocus />
+      <button id="secretGo">Load dashboard</button></div>
+  </div>
+  <div id="tip"></div>
+
+<script>
+const FUNCTION_URL="https://mediaplanparser.netlify.app/.netlify/functions/campaign-dashboard";
+const UPDATE_URL="https://mediaplanparser.netlify.app/.netlify/functions/update-vendor";
+// Confirmed field option tags (bare) <-> labels, for the editable Confirmed cell
+const VENDOR_OPTS=[['disqo','Disqo'],['nielsen','Nielsen'],['ispot','iSpot'],['adelaide','Adelaide'],['other','Other']];
+const LABEL_TO_TAG={Disqo:'disqo',Nielsen:'nielsen',iSpot:'ispot',Adelaide:'adelaide',Other:'other'};
+const PXDAY=3.4;
+const $=(id)=>document.getElementById(id);
+const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// ---- product dictionary (edit freely; matched against subject + line-item names) ----
+const PRODUCTS=[
+  {label:'Artist Franchise',match:['artist franchise']},
+  {label:'Vevo Evolve',match:['vevo evolve','vivo evolve']},
+  {label:'Premieres',match:['premiere']},
+  {label:'Sponsorship',match:['sponsorship']},
+  {label:'CTV',match:['ctv']},
+  {label:'Digital',match:['digital']},
+];
+function deriveProducts(c){
+  const names=(c.sponsorships||[]).map(s=>s.name||'').join(' ');
+  const hay=((c.subject||'')+' '+names).toLowerCase();
+  return PRODUCTS.filter(p=>p.match.some(m=>hay.includes(m))).map(p=>p.label);
+}
+
+function statusColor(label){const s=(label||'').toLowerCase();
+  if(s.includes('attention'))return css('--s-attention');
+  if(s.includes('deliver')||s.includes('insights'))return css('--s-deliver');
+  if(s.includes('report')&&s.includes('complete'))return css('--s-report-done');
+  if(s.includes('report'))return css('--s-report');
+  if(s.includes('campaign complete'))return css('--s-camp-done');
+  if(s.includes('live'))return css('--s-live');
+  if(s.includes('id created'))return css('--s-id');
+  if(s.includes('media plan'))return css('--s-media');
+  if(s.includes('feasibility'))return css('--s-feas');
+  return css('--s-default');}
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
+function pd(s){if(!s)return null;const m=String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);return m?new Date(+m[1],+m[2]-1,+m[3]):null;}
+function dayDiff(a,b){return Math.round((b-a)/86400000);}
+function firstOfMonth(d){return new Date(d.getFullYear(),d.getMonth(),1);}
+function lastOfMonth(d){return new Date(d.getFullYear(),d.getMonth()+1,0);}
+function addMonth(d){return new Date(d.getFullYear(),d.getMonth()+1,1);}
+function fmt(d){return d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'—';}
+function fmtNum(n){return n==null?'—':Number(n).toLocaleString('en-US');}
+function cleanSubject(s){return String(s||'').replace(/^re:\s*/i,'').trim();}
+
+let DATA=[], VIEW='table', SORT={key:'start',dir:1};
+const FILTERS={status:new Set(),product:new Set(),q:''};
+
+async function load(){
+  const secret=sessionStorage.getItem('mp_secret');
+  if(!secret){$('gate').style.display='flex';return;}
+  $('main').innerHTML='<div class="statusmsg">Loading campaigns…</div>';
+  try{
+    const res=await fetch(FUNCTION_URL,{method:'POST',headers:{'Content-Type':'application/json','X-Parser-Secret':secret},body:'{}'});
+    const data=await res.json();
+    if(!data.ok){if(/unauthorized/i.test(data.error||'')){sessionStorage.removeItem('mp_secret');$('gate').style.display='flex';}
+      $('main').innerHTML='<div class="statusmsg bad">'+esc(data.error||'Error')+'</div>';return;}
+    DATA=(data.campaigns||[]).map(c=>({...c,_products:deriveProducts(c)}));
+    $('countPill').textContent=DATA.length+' campaigns';
+    $('genAt').textContent=data.generatedAt?('updated '+new Date(data.generatedAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})):'';
+    buildFilters(); rerender();
+  }catch(e){$('main').innerHTML='<div class="statusmsg bad">Network error: '+esc(e.message)+'</div>';}
+}
+
+function buildFilters(){
+  const statuses=[...new Set(DATA.map(c=>c.statusLabel))].sort();
+  const prods=[...new Set(DATA.flatMap(c=>c._products))].sort();
+  $('statusFilters').innerHTML='<span class="lbl">Status</span>'+statuses.map(s=>
+    '<span class="fchip" data-type="status" data-v="'+esc(s)+'"><span class="dot" style="background:'+statusColor(s)+'"></span>'+esc(s)+'</span>').join('');
+  $('productFilters').innerHTML='<span class="lbl">Product</span>'+prods.map(p=>
+    '<span class="fchip" data-type="product" data-v="'+esc(p)+'">'+esc(p)+'</span>').join('');
+  document.querySelectorAll('.fchip').forEach(ch=>ch.addEventListener('click',()=>{
+    const t=ch.dataset.type,v=ch.dataset.v,set=FILTERS[t];
+    set.has(v)?set.delete(v):set.add(v); rerender();
+  }));
+}
+function applyFilterStyles(){
+  document.querySelectorAll('.fchip').forEach(ch=>{
+    const set=FILTERS[ch.dataset.type]; const on=set.has(ch.dataset.v);
+    ch.classList.toggle('on',on); ch.classList.toggle('off',set.size>0&&!on);
+  });
+}
+function filtered(){
+  return DATA.filter(c=>{
+    if(FILTERS.status.size&&!FILTERS.status.has(c.statusLabel))return false;
+    if(FILTERS.product.size&&!c._products.some(p=>FILTERS.product.has(p)))return false;
+    if(FILTERS.q){const h=((c.subject||'')+' #'+c.id).toLowerCase();if(!h.includes(FILTERS.q))return false;}
+    return true;
+  });
+}
+function rerender(){ applyFilterStyles(); VIEW==='table'?renderTable():renderTimeline(); }
+
+// ---------- Confirmed vendor (editable + save) ----------
+function confirmedCell(c){
+  const sel=new Set((c.vendorConfirmed||[]).map(l=>LABEL_TO_TAG[l]).filter(Boolean));
+  const chips=VENDOR_OPTS.map(([tag,label])=>{
+    const on=sel.has(tag);
+    return '<span class="vchip'+(on?' on':'')+'" onclick="event.stopPropagation();toggleVendor('+c.id+',\''+tag+'\')">'+esc(label)+'</span>';
+  }).join('');
+  return '<div class="vcell" id="vcell-'+c.id+'">'+chips
+    +'<button class="vsave" id="vsave-'+c.id+'" onclick="event.stopPropagation();saveVendors('+c.id+')" disabled>Save</button>'
+    +'<span class="vmsg" id="vmsg-'+c.id+'"></span></div>';
+}
+// pending selection state per ticket (tag set), seeded lazily from current confirmed
+const PENDING={};
+function ensurePending(id){
+  if(!PENDING[id]){ const c=DATA.find(x=>x.id===id);
+    PENDING[id]=new Set((c.vendorConfirmed||[]).map(l=>LABEL_TO_TAG[l]).filter(Boolean)); }
+  return PENDING[id];
+}
+function toggleVendor(id,tag){
+  const set=ensurePending(id); set.has(tag)?set.delete(tag):set.add(tag);
+  // reflect on chips
+  const cell=$('vcell-'+id);
+  cell.querySelectorAll('.vchip').forEach(ch=>{});
+  VENDOR_OPTS.forEach(([t])=>{});
+  const chips=cell.querySelectorAll('.vchip');
+  VENDOR_OPTS.forEach(([t,l],i)=>{ chips[i].classList.toggle('on', set.has(t)); });
+  $('vsave-'+id).disabled=false;
+  $('vmsg-'+id).textContent='';
+}
+async function saveVendors(id){
+  const secret=sessionStorage.getItem('mp_secret'); if(!secret) return;
+  const set=ensurePending(id); const vendors=[...set];
+  const btn=$('vsave-'+id), msg=$('vmsg-'+id);
+  btn.disabled=true; msg.textContent='saving…'; msg.className='vmsg';
+  try{
+    const res=await fetch(UPDATE_URL,{method:'POST',
+      headers:{'Content-Type':'application/json','X-Parser-Secret':secret},
+      body:JSON.stringify({ticketId:id,vendors})});
+    const data=await res.json();
+    if(!data.ok){ msg.textContent=data.error||'failed'; msg.className='vmsg bad'; btn.disabled=false; return; }
+    // update local cache so display stays in sync
+    const c=DATA.find(x=>x.id===id);
+    if(c) c.vendorConfirmed=vendors.map(t=>VENDOR_OPTS.find(o=>o[0]===t)[1]);
+    msg.textContent='saved ✓'; msg.className='vmsg ok';
+  }catch(e){ msg.textContent='network error'; msg.className='vmsg bad'; btn.disabled=false; }
+}
+
+// ---------- TABLE ----------
+function renderTable(){
+  const rows=filtered();
+  const sorted=[...rows].sort((a,b)=>{
+    let av,bv;
+    if(SORT.key==='start'){av=pd(a.spanStart);bv=pd(b.spanStart);av=av?av.getTime():Infinity;bv=bv?bv.getTime():Infinity;}
+    else if(SORT.key==='end'){av=pd(a.spanEnd);bv=pd(b.spanEnd);av=av?av.getTime():Infinity;bv=bv?bv.getTime():Infinity;}
+    else if(SORT.key==='status'){av=a.statusLabel||'';bv=b.statusLabel||'';}
+    else if(SORT.key==='spons'){av=a.sponsorshipCount;bv=b.sponsorshipCount;}
+    else {av=a.id;bv=b.id;}
+    return (av>bv?1:av<bv?-1:0)*SORT.dir;
+  });
+  const arr=(k)=>SORT.key===k?(SORT.dir>0?'▲':'▼'):'<span class="arr">⇅</span>';
+  let body='';
+  sorted.forEach((c,idx)=>{
+    const s=pd(c.spanStart),e=pd(c.spanEnd);
+    const reqHtml=(c.vendorRequested&&c.vendorRequested.length)
+      ? c.vendorRequested.map(v=>'<span class="ptag">'+esc(v)+'</span>').join('')
+      : '<span class="muted">—</span>';
+    body+='<tr class="crow" onclick="toggleDetail('+idx+')">'
+      +'<td class="tkt">#'+esc(c.id)+'</td>'
+      +'<td class="cname">'+esc(cleanSubject(c.subject))+'</td>'
+      +'<td><span class="status-tag" style="background:'+statusColor(c.statusLabel)+'">'+esc(c.statusLabel)+'</span></td>'
+      +'<td>'+reqHtml+'</td>'
+      +'<td onclick="event.stopPropagation()">'+confirmedCell(c)+'</td>'
+      +'<td>'+(c._products.length?c._products.map(p=>'<span class="ptag">'+esc(p)+'</span>').join(''):'<span class="muted">—</span>')+'</td>'
+      +'<td class="nums">'+fmt(s)+'</td><td class="nums">'+fmt(e)+'</td>'
+      +'<td class="nums">'+c.sponsorshipCount+'</td></tr>';
+    // detail row
+    const sp=(c.sponsorships||[]);
+    let det='<tr class="detail" id="det'+idx+'" style="display:none"><td colspan="9"><div class="det-inner">';
+    if(sp.length){
+      det+='<table class="sub"><thead><tr><th>Line item</th><th>Start</th><th>End</th><th>Budget</th><th>Impressions</th></tr></thead><tbody>';
+      sp.forEach(x=>{det+='<tr><td class="nm">'+esc(x.name||'(unnamed)')+'</td><td>'+fmt(pd(x.start))+'</td><td>'+fmt(pd(x.end))
+        +'</td><td>'+(x.budget!=null?'$'+fmtNum(x.budget):'—')+'</td><td>'+fmtNum(x.imps)+'</td></tr>';});
+      det+='</tbody></table>';
+    } else det+='<span class="muted" style="font-size:12px">No sponsorship line items parsed yet for this campaign.</span>';
+    det+='</div></td></tr>';
+    body+=det;
+  });
+  $('main').innerHTML='<div class="tablewrap"><table class="grid"><thead><tr>'
+    +'<th onclick="setSort(\'id\')">Ticket '+arr('id')+'</th>'
+    +'<th>Campaign</th><th onclick="setSort(\'status\')">Status '+arr('status')+'</th>'
+    +'<th>Vendor requested</th><th>Vendor confirmed</th><th>Products</th>'
+    +'<th onclick="setSort(\'start\')">Flight start '+arr('start')+'</th>'
+    +'<th onclick="setSort(\'end\')">Flight end '+arr('end')+'</th>'
+    +'<th onclick="setSort(\'spons\')"># '+arr('spons')+'</th></tr></thead><tbody>'
+    +(sorted.length?body:'<tr><td colspan="9" class="muted" style="padding:24px">No campaigns match the current filters.</td></tr>')
+    +'</tbody></table></div>';
+}
+function setSort(k){ if(SORT.key===k)SORT.dir*=-1; else {SORT.key=k;SORT.dir=1;} renderTable(); }
+function toggleDetail(i){const el=$('det'+i);if(el)el.style.display=el.style.display==='none'?'table-row':'none';}
+
+// ---------- TIMELINE ----------
+let DOMAIN=null; function x(d){return dayDiff(DOMAIN.start,d)*PXDAY;}
+function renderTimeline(){
+  const all=filtered();
+  const withD=all.filter(c=>pd(c.spanStart)&&pd(c.spanEnd)).sort((a,b)=>pd(a.spanStart)-pd(b.spanStart));
+  const noD=all.filter(c=>!(pd(c.spanStart)&&pd(c.spanEnd)));
+  const statuses=[...new Set(all.map(c=>c.statusLabel))];
+  let legend='<div class="legend">'+statuses.map(s=>'<span class="chip"><span class="dot" style="background:'+statusColor(s)+'"></span>'+esc(s)+'</span>').join('')+'</div>';
+  if(!withD.length){$('main').innerHTML=legend+'<div class="statusmsg">No campaigns with flight dates match the filters.</div>'+renderNoDates(noD);return;}
+  let min=null,max=null;withD.forEach(c=>{const s=pd(c.spanStart),e=pd(c.spanEnd);if(!min||s<min)min=s;if(!max||e>max)max=e;});
+  DOMAIN={start:firstOfMonth(min),end:lastOfMonth(max)};
+  const totalDays=dayDiff(DOMAIN.start,DOMAIN.end)+1,laneW=Math.ceil(totalDays*PXDAY);
+  let ticks='',grid='';
+  for(let m=new Date(DOMAIN.start);m<=DOMAIN.end;m=addMonth(m)){const l=x(m);
+    ticks+='<div class="month-tick" style="left:'+l+'px">'+m.toLocaleDateString('en-US',{month:'short',year:'2-digit'})+'</div>';
+    grid+='<div class="grid-line" style="left:'+l+'px"></div>';}
+  const today=new Date();today.setHours(0,0,0,0);let todayEl='';
+  if(today>=DOMAIN.start&&today<=DOMAIN.end){const tx=x(today);todayEl='<div class="today-line" style="left:'+tx+'px"></div><div class="today-flag" style="left:'+tx+'px">TODAY</div>';}
+  let rows='';
+  withD.forEach((c,i)=>{const s=pd(c.spanStart),e=pd(c.spanEnd);const left=x(s),w=Math.max(8,(dayDiff(s,e)+1)*PXDAY);
+    const col=statusColor(c.statusLabel),dur=dayDiff(s,e)+1;
+    const spons=(c.sponsorships||[]).filter(sp=>pd(sp.start)&&pd(sp.end));
+    rows+='<div class="trow" data-i="'+i+'"><div class="tlabel" onclick="toggleT('+i+')">'
+      +'<div class="tkt"><span class="caret">▶</span><span style="font-family:IBM Plex Mono;font-size:11px;color:var(--ink-soft)">#'+esc(c.id)+' · '+esc(c.statusLabel)+'</span></div>'
+      +'<div class="nm">'+esc(cleanSubject(c.subject))+'</div></div>'
+      +'<div class="lane" style="width:'+laneW+'px">'+grid+todayEl
+      +'<div class="tbar" style="left:'+left+'px;width:'+w+'px;background:'+col+'" onmouseenter="tip(event,'+jsq('#'+c.id)+','+jsq(fmt(s)+' → '+fmt(e)+' · '+dur+'d')+')" onmousemove="tipMove(event)" onmouseleave="tipHide()"><span class="pill-status">'+esc(c.statusLabel)+'</span></div></div></div>';
+    spons.forEach(sp=>{const ss=pd(sp.start),se=pd(sp.end),sl=x(ss),sw=Math.max(5,(dayDiff(ss,se)+1)*PXDAY);
+      rows+='<div class="subrow sub-of-'+i+'" style="display:none"><div class="tlabel"><div class="sname">'+esc(sp.name||'(unnamed)')+'</div></div>'
+        +'<div class="lane" style="width:'+laneW+'px"><div class="subbar" style="left:'+sl+'px;width:'+sw+'px;background:'+col+'" onmouseenter="tip(event,'+jsq(sp.name||'Sponsorship')+','+jsq(fmt(ss)+' → '+fmt(se)+' · $'+fmtNum(sp.budget)+' · '+fmtNum(sp.imps)+' imps')+')" onmousemove="tipMove(event)" onmouseleave="tipHide()"></div></div></div>';});
+  });
+  $('main').innerHTML=legend+'<div class="chart-wrap"><div class="chart">'
+    +'<div class="axis"><div class="corner">Campaign</div><div class="months" style="width:'+laneW+'px">'+ticks+'</div></div>'
+    +rows+'</div></div>'+renderNoDates(noD);
+}
+function renderNoDates(list){if(!list.length)return'';
+  const cards=list.map(c=>'<div style="background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:9px 12px;min-width:230px">'
+    +'<div class="tkt">#'+esc(c.id)+'</div><div style="font-size:12.5px;font-weight:600;line-height:1.25;margin:3px 0">'+esc(cleanSubject(c.subject))+'</div>'
+    +'<span class="status-tag" style="background:'+statusColor(c.statusLabel)+'">'+esc(c.statusLabel)+'</span></div>').join('');
+  return'<div class="nodates"><h2>Awaiting media plan parse ('+list.length+')</h2><p>No sponsorship dates yet — parse their media plans to place them on the timeline.</p>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:8px">'+cards+'</div></div>';}
+function toggleT(i){const r=document.querySelector('.trow[data-i="'+i+'"]');r.classList.toggle('open');
+  const open=r.classList.contains('open');document.querySelectorAll('.sub-of-'+i).forEach(el=>el.style.display=open?'flex':'none');}
+
+// tooltip + gate
+function jsq(s){return JSON.stringify(String(s));}
+function tip(e,n,r){const t=$('tip');t.innerHTML='<div class="t-name">'+esc(n)+'</div><div class="t-row">'+esc(r)+'</div>';t.style.opacity=1;tipMove(e);}
+function tipMove(e){const t=$('tip');t.style.left=(e.clientX+14)+'px';t.style.top=(e.clientY+14)+'px';}
+function tipHide(){$('tip').style.opacity=0;}
+$('vTable').onclick=()=>{VIEW='table';$('vTable').classList.add('active');$('vTime').classList.remove('active');rerender();};
+$('vTime').onclick=()=>{VIEW='timeline';$('vTime').classList.add('active');$('vTable').classList.remove('active');rerender();};
+$('search').addEventListener('input',e=>{FILTERS.q=e.target.value.toLowerCase().trim();rerender();});
+$('clearF').onclick=()=>{FILTERS.status.clear();FILTERS.product.clear();FILTERS.q='';$('search').value='';rerender();};
+$('refreshBtn').onclick=load;
+$('secretGo').onclick=()=>{const v=$('secretIn').value.trim();if(!v)return;sessionStorage.setItem('mp_secret',v);$('gate').style.display='none';load();};
+$('secretIn').addEventListener('keydown',e=>{if(e.key==='Enter')$('secretGo').click();});
+load();
+</script>
+</body>
+</html>
