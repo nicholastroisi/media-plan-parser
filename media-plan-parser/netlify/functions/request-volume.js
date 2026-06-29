@@ -118,6 +118,9 @@ async function fetchTicketsSince(sub, startTimeUnix, wantedFormIds) {
       if (!wantedFormIds.has(t.ticket_form_id)) continue; // classify by FORM
       if (!t.created_at) continue;
       out.push({
+        id: t.id,
+        subject: t.subject || t.raw_subject || '',
+        status: t.status || '',
         formId: t.ticket_form_id,
         requesterId: t.requester_id || null,
         createdAt: t.created_at,
@@ -172,6 +175,23 @@ exports.handler = async (event) => {
     if (!wantedFormIds.size) throw new Error('No US Insights / US Measurement form matched. See FORMS FOUND log lines above.');
 
     const { tickets, capped } = await fetchTicketsSince(sub, startTimeUnix, wantedFormIds);
+
+    // DIAGNOSTIC: list every Measurement-form ticket so we can see what they actually are.
+    // (Dumps ID, created-quarter, status, tags, and subject for each one.)
+    const measTickets = tickets.filter((t) => formMap[t.formId] === 'Vevo Measurement');
+    const measByQuarter = {};
+    for (const t of measTickets) {
+      const qk = quarterKey(new Date(t.createdAt));
+      measByQuarter[qk] = (measByQuarter[qk] || 0) + 1;
+    }
+    console.log(`--- MEASUREMENT-FORM TICKETS: ${measTickets.length} total ---`);
+    console.log(`MEAS by quarter: ${JSON.stringify(measByQuarter)}`);
+    for (const t of measTickets) {
+      const qk = quarterKey(new Date(t.createdAt));
+      const subj = String(t.subject || '(no subject)').replace(/\s+/g, ' ').slice(0, 70);
+      console.log(`MEAS id=${t.id} q=${qk} status=${t.status} tags=[${t.tags.join(',')}] subject="${subj}"`);
+    }
+    console.log(`--- END MEASUREMENT DUMP ---`);
 
     // Pass 1: office/role from tags; collect requesters that need a profile fallback.
     const needFallback = [];
