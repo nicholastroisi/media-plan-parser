@@ -1,46 +1,25 @@
-// request-volume.js  (v3 — classify strictly by FORM, with full diagnostics)
-// Read-only leadership function: counts request VOLUME by calendar quarter x office x role.
+// request-volume.js
+// Read-only leadership function: counts request VOLUME for the Vevo Insights and
+// Vevo Measurement brands, broken down by calendar quarter x office x role.
 //
-// CLASSIFICATION (the only thing that decides Insights vs Measurement):
-//   - Form "US Insights Request"      -> Vevo Insights
-//   - Form "US Measurement Request"   -> Vevo Measurement
-//   - Form "UK & AUS Research Request"-> ignored (not US)
-//   Brand is NOT used: Insights tickets are stamped brand "Vevo Research" and
-//   Measurement tickets "Vevo Measurement", so brand is unreliable. The FORM is
-//   stamped consistently on every ticket, so we key on that.
+// Office and role come from the REQUESTER'S USER PROFILE FIELDS (not ticket tags),
+// because Zendesk does not retroactively tag old tickets when a user's tags change.
+// User field keys:  office = "office"  (Sales Region),  role = "role_level" (Role Level).
 //
-// Form names are matched case-insensitively against BOTH the form's internal `name`
-// and its `display_name` (those can differ in Zendesk). If an exact match isn't found,
-// we fall back to a substring match (insight / measurement), excluding UK/AUS.
-//
-// OFFICE/ROLE come from the TICKET'S TAGS (e.g. "east_coast",
-// "account_service_representative"), falling back to the requester's user-profile
-// fields (office / role_level) only when a ticket has no matching office/role tag.
-//
-// This build logs heavy DIAGNOSTICS to the Netlify function log so we can see exactly
-// which forms exist, how each was classified, how many tickets landed in each bucket,
-// and how often office/role tags were present. Output schema is unchanged, so
-// leadership-volume.html needs no edits.
-//
-// Env vars: ZENDESK_SUBDOMAIN, ZENDESK_EMAIL, ZENDESK_API_TOKEN, PARSER_SHARED_SECRET
+// Reuses env vars: ZENDESK_SUBDOMAIN, ZENDESK_EMAIL, ZENDESK_API_TOKEN, PARSER_SHARED_SECRET
 // Gated by X-Parser-Secret.
 
-const LABELS = ['Vevo Insights', 'Vevo Measurement']; // for the dashboard legend
-const QUARTERS_BACK = 6;
-const MAX_PAGES = 40; // safety cap on incremental export pages (~40k tickets)
+const BRAND_NAMES = ['Vevo Insights', 'Vevo Measurement']; // only these two are counted
+const QUARTERS_BACK = 6;            // how many recent calendar quarters to include
+const OFFICE_FIELD = 'office';      // user_fields key for Sales Region
+const ROLE_FIELD = 'role_level';    // user_fields key for Role Level
+const VERTICAL_FIELD_ID = 41940061600532; // "Vertical" multi-select ticket custom field
+const MAX_PAGES = 40;               // safety cap on incremental export pages (40k tickets)
 
-// Tag vocabularies — mirror OFFICE_ORDER / ROLE_ORDER in leadership-volume.html.
-const OFFICE_TAGS = ['east_coast', 'west_coast', 'midwest', 'international'];
-const ROLE_TAGS = [
-  'senior_vice_president', 'vice_president', 'director', 'regional_manager',
-  'campaign_manager', 'account_manager', 'account_executive',
-  'account_service_representative', 'marketing_team', 'agency_partnerships',
-  'ppi_team', 'sales-intern', 'remote',
-];
-
-// User-field keys used ONLY as a fallback when a ticket has no office/role tag.
-const OFFICE_FIELD = 'office';
-const ROLE_FIELD = 'role_level';
+// Fallback label maker for a vertical option tag if the field definition can't be read.
+function prettifyTag(tag) {
+  return String(tag).replace(/^vert_/, '').replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -64,84 +43,58 @@ function buildQuarterWindow(back) {
   let q = Math.floor(now.getUTCMonth() / 3); // 0-3
   const keys = [];
   for (let i = 0; i < back; i++) { keys.unshift(`${y}-Q${q + 1}`); q--; if (q < 0) { q = 3; y--; } }
+  const earliest = startOfQuarter(y, q + 1 > 3 ? 0 : q + 1); // start of the oldest quarter included
+  // recompute earliest cleanly from the first key
   const [fy, fq] = keys[0].split('-Q').map(Number);
   return { keys, startTimeUnix: Math.floor(startOfQuarter(fy, fq - 1).getTime() / 1000) };
 }
 
-// Decide the label for a form from its name / display_name. Returns a label string,
-// 'IGNORED' (recognized but not US), or null (unrecognized).
-function classifyForm(name, displayName) {
-  const cands = [name, displayName].filter(Boolean).map((s) => String(s).trim().toLowerCase());
-  for (const c of cands) {
-    if (c === 'us insights request') return 'Vevo Insights';
-    if (c === 'us measurement request') return 'Vevo Measurement';
-    if (c === 'uk & aus research request') return 'IGNORED';
-  }
-  // Fallback: substring, but never count UK/AUS as US.
-  for (const c of cands) {
-    if (/\buk\b|\baus\b|australia|international/.test(c)) return 'IGNORED';
-    if (c.includes('insight')) return 'Vevo Insights';
-    if (c.includes('measurement')) return 'Vevo Measurement';
-  }
-  return null;
-}
-
-// Resolve which form IDs map to which label, and LOG every form we find.
-async function resolveFormIds(sub) {
-  const url = `https://${sub}.zendesk.com/api/v2/ticket_forms.json`;
+async function resolveBrandIds(sub) {
+  const map = {}; // id -> label  (only for wanted brands)
+  let url = `https://${sub}.zendesk.com/api/v2/brands.json`;
   const res = await fetch(url, { headers: { Authorization: authHeader() } });
-  if (!res.ok) throw new Error(`ticket_forms fetch failed (${res.status})`);
+  if (!res.ok) throw new Error(`brands fetch failed (${res.status})`);
   const data = await res.json();
-  const map = {}; // formId -> label ('Vevo Insights' | 'Vevo Measurement')
-  console.log(`--- FORMS FOUND (${(data.ticket_forms || []).length}) ---`);
-  for (const f of data.ticket_forms || []) {
-    const label = classifyForm(f.name, f.display_name);
-    console.log(`FORM id=${f.id} active=${f.active} name="${f.name}" display_name="${f.display_name}" -> ${label || 'UNRECOGNIZED'}`);
-    if (label === 'Vevo Insights' || label === 'Vevo Measurement') map[f.id] = label;
-  }
-  const labelsMatched = [...new Set(Object.values(map))];
-  console.log(`--- FORMS MATCHED: ${labelsMatched.join(', ') || '(none)'} ---`);
+  for (const b of data.brands || []) if (BRAND_NAMES.includes(b.name)) map[b.id] = b.name;
+  const missing = BRAND_NAMES.filter((n) => !Object.values(map).includes(n));
+  if (missing.length) console.log(`WARN: brand(s) not found: ${missing.join(', ')}`);
   return map;
 }
 
 // Incremental export (cursor) — pages of up to 1000, no 1000-result search cap
-async function fetchTicketsSince(sub, startTimeUnix, wantedFormIds) {
+async function fetchTicketsSince(sub, startTimeUnix, wantedBrandIds) {
   let url = `https://${sub}.zendesk.com/api/v2/incremental/tickets/cursor.json?start_time=${startTimeUnix}`;
-  const out = []; let pages = 0; let scanned = 0; let capped = false;
+  const out = []; let pages = 0; let capped = false;
   while (url) {
     if (pages >= MAX_PAGES) { capped = true; break; }
     const res = await fetch(url, { headers: { Authorization: authHeader() } });
-    if (!res.ok) { const b = await res.text().catch(() => ''); throw new Error(`incremental tickets failed (${res.status}): ${b.slice(0, 150)}`); }
+    if (!res.ok) { const b = await res.text().catch(() => ''); throw new Error(`incremental tickets failed (${res.status}): ${b.slice(0,150)}`); }
     const data = await res.json();
     for (const t of data.tickets || []) {
-      scanned++;
-      if (t.status === 'deleted') continue;             // Zendesk streams deleted/scrubbed tickets; drop them
-      if (!wantedFormIds.has(t.ticket_form_id)) continue; // classify by FORM
-      if (!t.created_at) continue;
-      out.push({
-        id: t.id,
-        subject: t.subject || t.raw_subject || '',
-        status: t.status || '',
-        formId: t.ticket_form_id,
-        requesterId: t.requester_id || null,
-        createdAt: t.created_at,
-        tags: Array.isArray(t.tags) ? t.tags : [],
-      });
+      if (!wantedBrandIds.has(t.brand_id)) continue;
+      if (!t.requester_id || !t.created_at) continue;
+      // Vertical: prefer the multi-select custom field value; fall back to vert_* tags.
+      let verticals = [];
+      const cf = (t.custom_fields || []).find((f) => String(f.id) === String(VERTICAL_FIELD_ID));
+      if (cf && cf.value != null && cf.value !== '') {
+        verticals = Array.isArray(cf.value) ? cf.value : [cf.value];
+      } else if (Array.isArray(t.tags)) {
+        verticals = t.tags.filter((tg) => /^vert_/.test(tg));
+      }
+      out.push({ brandId: t.brand_id, requesterId: t.requester_id, createdAt: t.created_at, verticals });
     }
     pages++;
     if (data.end_of_stream || !data.after_cursor) break;
     url = `https://${sub}.zendesk.com/api/v2/incremental/tickets/cursor.json?cursor=${encodeURIComponent(data.after_cursor)}`;
   }
-  console.log(`incremental: ${pages} page(s), ${scanned} tickets scanned, ${out.length} matched a wanted form${capped ? ' (CAPPED)' : ''}`);
+  console.log(`incremental: ${pages} page(s), ${out.length} tickets in wanted brands${capped ? ' (CAPPED)' : ''}`);
   return { tickets: out, capped };
 }
 
-function firstTag(tags, vocab) { for (const v of vocab) if (tags.includes(v)) return v; return null; }
-
-// Batch-resolve requester office+role from user profile fields (FALLBACK only)
+// Batch-resolve requester office+role from user profile fields
 async function resolveUsers(sub, ids) {
   const map = {};
-  const unique = [...new Set(ids)].filter(Boolean);
+  const unique = [...new Set(ids)];
   for (let i = 0; i < unique.length; i += 100) {
     const chunk = unique.slice(i, i + 100);
     const url = `https://${sub}.zendesk.com/api/v2/users/show_many.json?ids=${chunk.join(',')}`;
@@ -153,7 +106,22 @@ async function resolveUsers(sub, ids) {
       map[u.id] = { office: uf[OFFICE_FIELD] || null, role: uf[ROLE_FIELD] || null };
     }
   }
-  console.log(`fallback profiles resolved: ${Object.keys(map).length}`);
+  console.log(`resolved ${Object.keys(map).length} requesters`);
+  return map;
+}
+
+// Map vertical multi-select option tags -> human labels (e.g. "vert_tech" -> "Tech")
+async function resolveVerticalOptions(sub) {
+  const map = {};
+  try {
+    const url = `https://${sub}.zendesk.com/api/v2/ticket_fields/${VERTICAL_FIELD_ID}.json`;
+    const res = await fetch(url, { headers: { Authorization: authHeader() } });
+    if (!res.ok) { console.log(`vertical field fetch failed (${res.status}); will prettify tags`); return map; }
+    const data = await res.json();
+    const opts = (data.ticket_field && data.ticket_field.custom_field_options) || [];
+    for (const o of opts) map[o.value] = o.name;
+    console.log(`resolved ${Object.keys(map).length} vertical options`);
+  } catch (e) { console.log('vertical options error:', e.message); }
   return map;
 }
 
@@ -171,83 +139,64 @@ exports.handler = async (event) => {
     const { keys: quarters, startTimeUnix } = buildQuarterWindow(QUARTERS_BACK);
     const quarterSet = new Set(quarters);
 
-    const formMap = await resolveFormIds(sub);
-    const wantedFormIds = new Set(Object.keys(formMap).map(Number));
-    if (!wantedFormIds.size) throw new Error('No US Insights / US Measurement form matched. See FORMS FOUND log lines above.');
+    const brandMap = await resolveBrandIds(sub);
+    const wantedBrandIds = new Set(Object.keys(brandMap).map(Number));
+    if (!wantedBrandIds.size) throw new Error('Neither target brand was found in this Zendesk account.');
 
-    const { tickets, capped } = await fetchTicketsSince(sub, startTimeUnix, wantedFormIds);
+    const { tickets, capped } = await fetchTicketsSince(sub, startTimeUnix, wantedBrandIds);
+    const userMap = await resolveUsers(sub, tickets.map((t) => t.requesterId));
+    const vertMap = await resolveVerticalOptions(sub);
 
-    // DIAGNOSTIC: list every Measurement-form ticket so we can see what they actually are.
-    // (Dumps ID, created-quarter, status, tags, and subject for each one.)
-    const measTickets = tickets.filter((t) => formMap[t.formId] === 'Vevo Measurement');
-    const measByQuarter = {};
-    for (const t of measTickets) {
-      const qk = quarterKey(new Date(t.createdAt));
-      measByQuarter[qk] = (measByQuarter[qk] || 0) + 1;
-    }
-    console.log(`--- MEASUREMENT-FORM TICKETS: ${measTickets.length} total ---`);
-    console.log(`MEAS by quarter: ${JSON.stringify(measByQuarter)}`);
-    for (const t of measTickets) {
-      const qk = quarterKey(new Date(t.createdAt));
-      const subj = String(t.subject || '(no subject)').replace(/\s+/g, ' ').slice(0, 70);
-      console.log(`MEAS id=${t.id} q=${qk} status=${t.status} tags=[${t.tags.join(',')}] subject="${subj}"`);
-    }
-    console.log(`--- END MEASUREMENT DUMP ---`);
-
-    // Pass 1: office/role from tags; collect requesters that need a profile fallback.
-    const needFallback = [];
-    for (const t of tickets) {
-      t.officeTag = firstTag(t.tags, OFFICE_TAGS);
-      t.roleTag = firstTag(t.tags, ROLE_TAGS);
-      if ((!t.officeTag || !t.roleTag) && t.requesterId) needFallback.push(t.requesterId);
-    }
-    const userMap = needFallback.length ? await resolveUsers(sub, needFallback) : {};
-
-    // Pass 2: bucket label -> quarter -> office -> role -> count, gathering diagnostics.
+    // bucket: brand -> quarter -> office -> role -> count
     const cells = {};
+    // parallel bucket for vertical: brand -> quarter -> vertical -> count
+    // (Vertical is a multi-select, so one ticket can add to more than one vertical;
+    //  vertical totals can therefore exceed the request count for a quarter.)
+    const vcells = {};
     let counted = 0;
-    const diag = {}; // label -> {tot, officeTag, roleTag, officeAny, roleAny}
-    const bump = (lbl) => (diag[lbl] || (diag[lbl] = { tot: 0, officeTag: 0, roleTag: 0, officeAny: 0, roleAny: 0 }));
     for (const t of tickets) {
       const qk = quarterKey(new Date(t.createdAt));
-      if (!quarterSet.has(qk)) continue; // outside display window
-      const label = formMap[t.formId];
+      if (!quarterSet.has(qk)) continue;            // outside display window
+      const brand = brandMap[t.brandId];
       const u = userMap[t.requesterId] || {};
-      const office = t.officeTag || u.office || 'unspecified';
-      const role = t.roleTag || u.role || 'unspecified';
-
-      const d = bump(label);
-      d.tot++;
-      if (t.officeTag) d.officeTag++;
-      if (t.roleTag) d.roleTag++;
-      if (office !== 'unspecified') d.officeAny++;
-      if (role !== 'unspecified') d.roleAny++;
-
-      const key = `${label}|${qk}|${office}|${role}`;
+      const office = u.office || 'unspecified';
+      const role = u.role || 'unspecified';
+      const key = `${brand}|${qk}|${office}|${role}`;
       cells[key] = (cells[key] || 0) + 1;
       counted++;
-    }
 
-    // Diagnostics: per-label counts and tag coverage (in display window).
-    for (const lbl of Object.keys(diag)) {
-      const d = diag[lbl];
-      console.log(`BUCKET "${lbl}": ${d.tot} tickets in window | office from tag ${d.officeTag}/${d.tot}, any ${d.officeAny}/${d.tot} | role from tag ${d.roleTag}/${d.tot}, any ${d.roleAny}/${d.tot}`);
+      // vertical bucketing
+      const verts = (t.verticals || []).map((tag) => vertMap[tag] || prettifyTag(tag)).filter(Boolean);
+      if (verts.length === 0) {
+        const vk = `${brand}|${qk}|Unspecified`;
+        vcells[vk] = (vcells[vk] || 0) + 1;
+      } else {
+        for (const v of verts) {
+          const vk = `${brand}|${qk}|${v}`;
+          vcells[vk] = (vcells[vk] || 0) + 1;
+        }
+      }
     }
-    console.log(`TOTAL counted in window: ${counted}`);
-
     const cellList = Object.entries(cells).map(([k, count]) => {
       const [brand, quarter, office, role] = k.split('|');
       return { brand, quarter, office, role, count };
+    });
+    const vcellList = Object.entries(vcells).map(([k, count]) => {
+      const [brand, quarter, vertical] = k.split('|');
+      return { brand, quarter, vertical, count };
     });
 
     return {
       statusCode: 200, headers: CORS,
       body: JSON.stringify({
         ok: true, generatedAt: new Date().toISOString(),
-        brands: LABELS, quarters,
+        brands: BRAND_NAMES, quarters,
         offices: [...new Set(cellList.map((c) => c.office))],
         roles: [...new Set(cellList.map((c) => c.role))],
-        cells: cellList, ticketsCounted: counted, capped,
+        cells: cellList,
+        verticals: [...new Set(vcellList.map((c) => c.vertical))],
+        verticalCells: vcellList,
+        ticketsCounted: counted, capped,
       }),
     };
   } catch (err) {
