@@ -76,6 +76,8 @@ const OFFICE_ORDER=['east_coast','midwest','west_coast','international','unspeci
 const ROLE_ORDER=['senior_vice_president','vice_president','director','regional_manager','campaign_manager',
   'account_manager','account_executive','account_service_representative','marketing_team','agency_partnerships',
   'ppi_team','sales-intern','remote','unspecified'];
+const VERTICAL_ORDER=['Tech','Auto','CPG','Retail','Travel','Telecom','Finance/Banking','Health & Beauty',
+  'Cable/Streaming','Lifestyle','Entertainment','QSR/Family Restaurants','Pharma','Insurance','Gaming','Other','Unspecified'];
 
 function prettify(v){
   if(!v) return 'Unspecified';
@@ -87,6 +89,11 @@ function orderBy(values,order){
   const known=order.filter(o=>values.includes(o));
   const extra=values.filter(v=>!order.includes(v)).sort();
   return [...known.filter(k=>k!=='unspecified'),...extra,...(values.includes('unspecified')?['unspecified']:[])];
+}
+function orderVerticals(values){
+  const known=VERTICAL_ORDER.filter(o=>o!=='Unspecified'&&values.includes(o));
+  const extra=values.filter(v=>!VERTICAL_ORDER.includes(v)&&v!=='Unspecified').sort();
+  return [...known,...extra,...(values.includes('Unspecified')?['Unspecified']:[])];
 }
 
 let DATA=null, SELQ=null, charts={};
@@ -143,6 +150,13 @@ function render(){
       +'<div class="chartbox"><div style="position:relative;height:'+chartH(d.offices.length)+'px"><canvas id="byOffice" role="img" aria-label="Requests by office"></canvas></div></div>'
       +'<div class="chartbox"><div style="position:relative;height:'+chartH(d.roles.length)+'px"><canvas id="byRole" role="img" aria-label="Requests by role"></canvas></div></div>'
     +'</div>'
+    +(d.verticalCells?(
+      '<div class="section"><h2>Requests by vertical \u00b7 '+SELQ+'</h2>'
+      +'<div class="legend"><span class="chip"><span class="dot" style="background:'+C.insights+'"></span>Insights</span>'
+      +'<span class="chip"><span class="dot" style="background:'+C.measurement+'"></span>Measurement</span></div></div>'
+      +'<div class="chartbox"><div style="position:relative;height:'+chartH(orderVerticals([...new Set(d.verticalCells.map(c=>c.vertical))]).length)+'px"><canvas id="byVertical" role="img" aria-label="Requests by vertical"></canvas></div></div>'
+      +'<div class="note">Vertical is read from the campaign survey, so only surveyed campaigns carry one \u2014 everything else is \u201CUnspecified.\u201D Campaigns can select multiple verticals, so these bars may sum to more than the quarter total.</div>'
+    ):'')
     +(d.capped?'<div class="note">Note: results were capped at the export limit — counts may be partial. Tell your developer if you see this.</div>':'')
     +'<div class="note">Office &amp; role are read from each requester\u2019s current Zendesk profile. Requests from people without those fields set appear as \u201CUnspecified.\u201D</div>'
     +'</div>';
@@ -171,6 +185,11 @@ function drawBreakdowns(){
   const roles=orderBy([...new Set(d.cells.map(c=>c.role))],ROLE_ORDER);
   mkStacked('byOffice',offices,qCells,'office');
   mkStacked('byRole',roles,qCells,'role');
+  if(d.verticalCells){
+    const vQ=d.verticalCells.filter(c=>c.quarter===SELQ);
+    const verts=orderVerticals([...new Set(d.verticalCells.map(c=>c.vertical))]);
+    mkStacked('byVertical',verts,vQ,'vertical');
+  }
 }
 function mkStacked(id,keys,cells,dim){
   const ins=keys.map(k=>sum(cells.filter(c=>c[dim]===k&&brandKey(c.brand)==='insights')));
