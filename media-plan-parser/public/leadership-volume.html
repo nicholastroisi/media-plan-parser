@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Request Volume — Leadership View</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f4f1ea;--panel:#fbfaf6;--ink:#1c1b19;--ink-soft:#5c574e;
+    --line:#e2ddd1;--line-strong:#cfc8b8;--accent:#e2533b;
+    --insights:#2a78d6;--measurement:#1baf7a;
+    --shadow:0 1px 2px rgba(28,27,25,.06),0 8px 24px rgba(28,27,25,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(140% 120% at 12% -10%,#faf8f2 0%,var(--paper) 46%) fixed;
+    color:var(--ink);font-family:"IBM Plex Sans",sans-serif;-webkit-font-smoothing:antialiased;}
+  .top{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:26px 34px 16px;}
+  h1{font-family:"Bricolage Grotesque";font-weight:800;letter-spacing:-.02em;font-size:30px;margin:0;line-height:1;}
+  .sub{color:var(--ink-soft);font-size:13.5px;margin-top:7px;}
+  .meta{display:flex;align-items:center;gap:12px;font-size:12px;color:var(--ink-soft);font-family:"IBM Plex Mono";}
+  button.btn{font-family:"IBM Plex Sans";font-weight:600;font-size:13px;cursor:pointer;background:var(--panel);
+    border:1px solid var(--line-strong);border-radius:8px;padding:8px 13px;color:var(--ink);}
+  button.btn:hover{background:#fff;border-color:var(--ink-soft);}
+  .wrap{padding:6px 34px 60px;max-width:1100px;}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin:14px 0 26px;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;}
+  .card .lbl{font-size:12px;color:var(--ink-soft);font-family:"IBM Plex Mono";letter-spacing:.04em;text-transform:uppercase;}
+  .card .num{font-family:"Bricolage Grotesque";font-weight:800;font-size:34px;line-height:1.1;margin-top:6px;}
+  .card .delta{font-size:12px;margin-top:4px;font-family:"IBM Plex Mono";}
+  .delta.up{color:#1f7a4d;}.delta.down{color:var(--accent);}.delta.flat{color:var(--ink-soft);}
+  .section{margin:30px 0 8px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+  .section h2{font-family:"Bricolage Grotesque";font-weight:700;font-size:17px;margin:0;}
+  .legend{display:flex;gap:16px;font-size:12.5px;color:var(--ink-soft);align-items:center;}
+  .legend .chip{display:inline-flex;align-items:center;gap:7px;}
+  .legend .dot{width:12px;height:12px;border-radius:3px;}
+  .qsel{display:inline-flex;gap:6px;flex-wrap:wrap;}
+  .qbtn{font-family:"IBM Plex Mono";font-size:12px;border:1px solid var(--line-strong);background:var(--panel);
+    border-radius:7px;padding:5px 11px;cursor:pointer;color:var(--ink-soft);}
+  .qbtn.on{background:var(--ink);color:var(--paper);border-color:var(--ink);font-weight:600;}
+  .chartbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 18px 10px;margin-top:12px;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr;}}
+  .statusmsg{padding:44px 34px;color:var(--ink-soft);font-size:14px;}.statusmsg.bad{color:var(--accent);}
+  .note{font-size:11.5px;color:var(--ink-soft);font-family:"IBM Plex Mono";margin-top:10px;}
+  .gate{position:fixed;inset:0;background:rgba(28,27,25,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:50;}
+  .gate .box{background:var(--panel);border:1px solid var(--line-strong);border-radius:14px;box-shadow:var(--shadow);padding:26px;width:360px;}
+  .gate h3{font-family:"Bricolage Grotesque";font-weight:700;margin:0 0 6px;font-size:18px;}
+  .gate p{font-size:12.5px;color:var(--ink-soft);margin:0 0 16px;}
+  .gate input{width:100%;padding:10px 12px;border:1px solid var(--line-strong);border-radius:8px;font-family:"IBM Plex Mono";font-size:13px;margin-bottom:12px;}
+  .gate button{width:100%;background:var(--ink);color:var(--paper);border:0;border-radius:8px;padding:11px;font-weight:600;font-size:14px;cursor:pointer;}
+</style>
+</head>
+<body>
+  <div class="top">
+    <div><h1>Request Volume</h1><div class="sub">Insights &amp; Measurement requests by office and role — last six quarters.</div></div>
+    <div class="meta"><span id="genAt"></span><button class="btn" id="refreshBtn">Refresh</button></div>
+  </div>
+  <div id="main"><div class="statusmsg">Loading…</div></div>
+
+  <div class="gate" id="gate" style="display:none">
+    <div class="box"><h3>Enter access key</h3>
+      <p>This dashboard shows internal request data. Paste the shared secret to load it.</p>
+      <input type="password" id="secretIn" placeholder="shared secret" autofocus />
+      <button id="secretGo">Load dashboard</button></div>
+  </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const FUNCTION_URL="https://mediaplanparser.netlify.app/.netlify/functions/request-volume";
+const $=(id)=>document.getElementById(id);
+const C={insights:'#2a78d6',measurement:'#1baf7a'};
+const OFFICE_ORDER=['east_coast','midwest','west_coast','international','unspecified'];
+const ROLE_ORDER=['senior_vice_president','vice_president','director','regional_manager','campaign_manager',
+  'account_manager','account_executive','account_service_representative','marketing_team','agency_partnerships',
+  'ppi_team','sales-intern','remote','unspecified'];
+
+function prettify(v){
+  if(!v) return 'Unspecified';
+  const map={east_coast:'East Coast',west_coast:'West Coast',midwest:'Midwest',international:'International',unspecified:'Unspecified'};
+  if(map[v]) return map[v];
+  return String(v).replace(/[_-]+/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+}
+function orderBy(values,order){
+  const known=order.filter(o=>values.includes(o));
+  const extra=values.filter(v=>!order.includes(v)).sort();
+  return [...known.filter(k=>k!=='unspecified'),...extra,...(values.includes('unspecified')?['unspecified']:[])];
+}
+
+let DATA=null, SELQ=null, charts={};
+
+async function load(){
+  const secret=sessionStorage.getItem('mp_secret');
+  if(!secret){$('gate').style.display='flex';return;}
+  $('main').innerHTML='<div class="statusmsg">Loading request volume… (this one queries a lot of tickets, give it a few seconds)</div>';
+  try{
+    const res=await fetch(FUNCTION_URL,{method:'POST',headers:{'Content-Type':'application/json','X-Parser-Secret':secret},body:'{}'});
+    const data=await res.json();
+    if(!data.ok){if(/unauthorized/i.test(data.error||'')){sessionStorage.removeItem('mp_secret');$('gate').style.display='flex';}
+      $('main').innerHTML='<div class="statusmsg bad">'+(data.error||'Error')+'</div>';return;}
+    DATA=data; SELQ=data.quarters[data.quarters.length-1];
+    render();
+  }catch(e){$('main').innerHTML='<div class="statusmsg bad">Network error: '+e.message+'</div>';}
+}
+
+function sum(cells){return cells.reduce((a,c)=>a+c.count,0);}
+function brandKey(b){return b.toLowerCase().includes('insight')?'insights':'measurement';}
+
+function render(){
+  const d=DATA;
+  $('genAt').textContent=d.generatedAt?('updated '+new Date(d.generatedAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})):'';
+  // metric cards for selected quarter
+  const inQ=c=>c.quarter===SELQ;
+  const qCells=d.cells.filter(inQ);
+  const total=sum(qCells);
+  const ins=sum(qCells.filter(c=>brandKey(c.brand)==='insights'));
+  const meas=sum(qCells.filter(c=>brandKey(c.brand)==='measurement'));
+  // prior quarter delta
+  const qi=d.quarters.indexOf(SELQ); const prevQ=qi>0?d.quarters[qi-1]:null;
+  const prevTotal=prevQ?sum(d.cells.filter(c=>c.quarter===prevQ)):null;
+  let deltaHtml='<div class="delta flat">—</div>';
+  if(prevTotal!=null&&prevTotal>0){const pct=Math.round(((total-prevTotal)/prevTotal)*100);
+    const cls=pct>0?'up':pct<0?'down':'flat';const arrow=pct>0?'▲':pct<0?'▼':'•';
+    deltaHtml='<div class="delta '+cls+'">'+arrow+' '+Math.abs(pct)+'% vs '+prevQ+'</div>';}
+
+  const qbtns=d.quarters.map(q=>'<button class="qbtn'+(q===SELQ?' on':'')+'" onclick="selectQ(\''+q+'\')">'+q+'</button>').join('');
+
+  $('main').innerHTML=
+    '<div class="wrap">'
+    +'<div class="cards">'
+      +'<div class="card"><div class="lbl">'+SELQ+' total</div><div class="num">'+total.toLocaleString()+'</div>'+deltaHtml+'</div>'
+      +'<div class="card"><div class="lbl">Insights</div><div class="num" style="color:'+C.insights+'">'+ins.toLocaleString()+'</div></div>'
+      +'<div class="card"><div class="lbl">Measurement</div><div class="num" style="color:'+C.measurement+'">'+meas.toLocaleString()+'</div></div>'
+    +'</div>'
+    +'<div class="section"><h2>Volume by quarter</h2>'
+      +'<div class="legend"><span class="chip"><span class="dot" style="background:'+C.insights+'"></span>Insights</span>'
+      +'<span class="chip"><span class="dot" style="background:'+C.measurement+'"></span>Measurement</span></div></div>'
+    +'<div class="chartbox"><div style="position:relative;height:260px"><canvas id="trend" role="img" aria-label="Requests per quarter by brand"></canvas></div></div>'
+    +'<div class="section"><h2>Breakdown for a quarter</h2><div class="qsel">'+qbtns+'</div></div>'
+    +'<div class="grid2">'
+      +'<div class="chartbox"><div style="position:relative;height:'+chartH(d.offices.length)+'px"><canvas id="byOffice" role="img" aria-label="Requests by office"></canvas></div></div>'
+      +'<div class="chartbox"><div style="position:relative;height:'+chartH(d.roles.length)+'px"><canvas id="byRole" role="img" aria-label="Requests by role"></canvas></div></div>'
+    +'</div>'
+    +(d.capped?'<div class="note">Note: results were capped at the export limit — counts may be partial. Tell your developer if you see this.</div>':'')
+    +'<div class="note">Office &amp; role are read from each requester\u2019s current Zendesk profile. Requests from people without those fields set appear as \u201CUnspecified.\u201D</div>'
+    +'</div>';
+
+  drawTrend(); drawBreakdowns();
+}
+function chartH(n){return Math.max(180,n*38+70);}
+
+function selectQ(q){SELQ=q;render();}
+
+function drawTrend(){
+  const d=DATA;
+  const ins=d.quarters.map(q=>sum(d.cells.filter(c=>c.quarter===q&&brandKey(c.brand)==='insights')));
+  const meas=d.quarters.map(q=>sum(d.cells.filter(c=>c.quarter===q&&brandKey(c.brand)==='measurement')));
+  if(charts.trend)charts.trend.destroy();
+  charts.trend=new Chart($('trend'),{type:'bar',
+    data:{labels:d.quarters,datasets:[
+      {label:'Insights',data:ins,backgroundColor:C.insights,borderRadius:4,stack:'s'},
+      {label:'Measurement',data:meas,backgroundColor:C.measurement,borderRadius:4,stack:'s'}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,ticks:{precision:0},grid:{color:'#e2ddd1'}}}}});
+}
+function drawBreakdowns(){
+  const d=DATA; const qCells=d.cells.filter(c=>c.quarter===SELQ);
+  const offices=orderBy([...new Set(d.cells.map(c=>c.office))],OFFICE_ORDER);
+  const roles=orderBy([...new Set(d.cells.map(c=>c.role))],ROLE_ORDER);
+  mkStacked('byOffice',offices,qCells,'office');
+  mkStacked('byRole',roles,qCells,'role');
+}
+function mkStacked(id,keys,cells,dim){
+  const ins=keys.map(k=>sum(cells.filter(c=>c[dim]===k&&brandKey(c.brand)==='insights')));
+  const meas=keys.map(k=>sum(cells.filter(c=>c[dim]===k&&brandKey(c.brand)==='measurement')));
+  if(charts[id])charts[id].destroy();
+  charts[id]=new Chart($(id),{type:'bar',
+    data:{labels:keys.map(prettify),datasets:[
+      {label:'Insights',data:ins,backgroundColor:C.insights,borderRadius:4,stack:'s'},
+      {label:'Measurement',data:meas,backgroundColor:C.measurement,borderRadius:4,stack:'s'}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{x:{stacked:true,ticks:{precision:0},grid:{color:'#e2ddd1'}},y:{stacked:true,grid:{display:false}}}}});
+}
+
+$('secretGo').onclick=()=>{const v=$('secretIn').value.trim();if(!v)return;sessionStorage.setItem('mp_secret',v);$('gate').style.display='none';load();};
+$('secretIn').addEventListener('keydown',e=>{if(e.key==='Enter')$('secretGo').click();});
+$('refreshBtn').onclick=load;
+load();
+</script>
+</body>
+</html>
