@@ -14,6 +14,15 @@ const BRAND_NAMES = ['Vevo Research', 'Vevo Insights', 'Vevo Measurement']; // R
 const QUARTERS_BACK = 6;            // how many recent calendar quarters to include
 const OFFICE_FIELD = 'office';      // user_fields key for Sales Region
 const ROLE_FIELD = 'role_level';    // user_fields key for Role Level
+// User-field IDs (used to fetch the valid option tags so we can also match a requester's
+// user TAGS when the dropdown field itself is blank). Falls back to the hardcoded sets below
+// if the fetch fails. office/role attribution cascade: profile field -> matching user tag.
+const OFFICE_FIELD_ID = 50544093600788; // Sales Region user field
+const ROLE_FIELD_ID = 50544153621140;   // Role Level user field
+const OFFICE_TAGS_FALLBACK = ['east_coast', 'midwest', 'west_coast', 'remote', 'international'];
+const ROLE_TAGS_FALLBACK = ['senior_vice_president', 'vice_president', 'director', 'regional_manager',
+  'account_executive', 'account_manager', 'account_service_representative', 'campaign_manager',
+  'ppi_team', 'marketing_team', 'sales-intern'];
 const VERTICAL_FIELD_ID = 41940061600532; // "Vertical" multi-select ticket custom field
 const MAX_PAGES = 40;               // safety cap on incremental export pages (40k tickets)
 
@@ -93,8 +102,23 @@ async function fetchTicketsSince(sub, startTimeUnix, wantedBrandIds) {
   return { tickets: out, capped };
 }
 
-// Batch-resolve requester office+role from user profile fields
-async function resolveUsers(sub, ids) {
+// Fetch the valid option tags for a dropdown user field (so we can match a requester's
+// own tags when their dropdown value is blank). Returns a Set of tag strings.
+async function fetchUserFieldTags(sub, fieldId, fallback) {
+  try {
+    const res = await fetch(`https://${sub}.zendesk.com/api/v2/user_fields/${fieldId}.json`, { headers: { Authorization: authHeader() } });
+    if (!res.ok) { console.log(`user_field ${fieldId} fetch failed (${res.status}); using fallback`); return new Set(fallback); }
+    const data = await res.json();
+    const opts = (data.user_field && data.user_field.custom_field_options) || [];
+    const vals = opts.map((o) => o.value).filter(Boolean);
+    console.log(`user_field ${fieldId}: ${vals.length} option tags`);
+    return new Set(vals.length ? vals : fallback);
+  } catch (e) { console.log(`user_field ${fieldId} error: ${e.message}; using fallback`); return new Set(fallback); }
+}
+
+// Batch-resolve requester office+role. Cascade: profile dropdown field first; if blank,
+// fall back to whichever of the requester's own user TAGS matches a valid option tag.
+async function resolveUsers(sub, ids, officeTags, roleTags) {
   const map = {};
   const unique = [...new Set(ids)];
   for (let i = 0; i < unique.length; i += 100) {
@@ -105,7 +129,10 @@ async function resolveUsers(sub, ids) {
     const data = await res.json();
     for (const u of data.users || []) {
       const uf = u.user_fields || {};
-      map[u.id] = { office: uf[OFFICE_FIELD] || null, role: uf[ROLE_FIELD] || null, name: u.name || null };
+      const tags = Array.isArray(u.tags) ? u.tags : [];
+      const office = uf[OFFICE_FIELD] || tags.find((t) => officeTags.has(t)) || null;
+      const role = uf[ROLE_FIELD] || tags.find((t) => roleTags.has(t)) || null;
+      map[u.id] = { office, role, name: u.name || null };
     }
   }
   console.log(`resolved ${Object.keys(map).length} requesters`);
@@ -146,7 +173,9 @@ exports.handler = async (event) => {
     if (!wantedBrandIds.size) throw new Error('Neither target brand was found in this Zendesk account.');
 
     const { tickets, capped } = await fetchTicketsSince(sub, startTimeUnix, wantedBrandIds);
-    const userMap = await resolveUsers(sub, tickets.map((t) => t.requesterId));
+    const officeTags = await fetchUserFieldTags(sub, OFFICE_FIELD_ID, OFFICE_TAGS_FALLBACK);
+    const roleTags = await fetchUserFieldTags(sub, ROLE_FIELD_ID, ROLE_TAGS_FALLBACK);
+    const userMap = await resolveUsers(sub, tickets.map((t) => t.requesterId), officeTags, roleTags);
     const vertMap = await resolveVerticalOptions(sub);
 
     // bucket: brand -> quarter -> office -> role -> count
