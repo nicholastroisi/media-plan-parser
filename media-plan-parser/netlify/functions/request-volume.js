@@ -3,8 +3,11 @@
 // (served by the "Vevo Research" brand, plus the legacy "Vevo Insights" brand) and the
 // "Vevo Measurement" brand, broken down by calendar quarter x office x role.
 //
-// Office and role come from the REQUESTER'S USER PROFILE FIELDS (not ticket tags),
-// because Zendesk does not retroactively tag old tickets when a user's tags change.
+// Office and role are resolved with a cascade so attribution survives profile edits AND
+// user deletion:  requester profile field  ->  requester user tag  ->  the ticket's own tags.
+// The ticket-tag tier matters because a requester's tags are copied onto the ticket at
+// creation and persist even if the user is later deleted, giving a frozen snapshot of their
+// office/role as of ticket creation.
 // User field keys:  office = "office"  (Sales Region),  role = "role_level" (Role Level).
 //
 // Reuses env vars: ZENDESK_SUBDOMAIN, ZENDESK_EMAIL, ZENDESK_API_TOKEN, PARSER_SHARED_SECRET
@@ -72,7 +75,7 @@ async function resolveBrandIds(sub) {
 }
 
 // Incremental export (cursor) — pages of up to 1000, no 1000-result search cap
-async function fetchTicketsSince(sub, startTimeUnix, wantedBrandIds) {
+async function fetchTicketsSince(sub, startTimeUnix, wantedBrandIds, officeTags, roleTags) {
   let url = `https://${sub}.zendesk.com/api/v2/incremental/tickets/cursor.json?start_time=${startTimeUnix}`;
   const out = []; let pages = 0; let capped = false; let deletedSkipped = 0;
   while (url) {
@@ -92,7 +95,12 @@ async function fetchTicketsSince(sub, startTimeUnix, wantedBrandIds) {
       } else if (Array.isArray(t.tags)) {
         verticals = t.tags.filter((tg) => /^vert_/.test(tg));
       }
-      out.push({ id: t.id, subject: t.subject || '(no subject)', brandId: t.brand_id, requesterId: t.requester_id, createdAt: t.created_at, verticals });
+      // Snapshot of the requester's office/role as copied onto the ticket at creation.
+      // Survives user deletion (tags live on the ticket, not the user).
+      const allTags = Array.isArray(t.tags) ? t.tags : [];
+      const ticketOffice = (officeTags && allTags.find((tg) => officeTags.has(tg))) || null;
+      const ticketRole = (roleTags && allTags.find((tg) => roleTags.has(tg))) || null;
+      out.push({ id: t.id, subject: t.subject || '(no subject)', brandId: t.brand_id, requesterId: t.requester_id, createdAt: t.created_at, verticals, ticketOffice, ticketRole });
     }
     pages++;
     if (data.end_of_stream || !data.after_cursor) break;
@@ -172,9 +180,9 @@ exports.handler = async (event) => {
     const wantedBrandIds = new Set(Object.keys(brandMap).map(Number));
     if (!wantedBrandIds.size) throw new Error('Neither target brand was found in this Zendesk account.');
 
-    const { tickets, capped } = await fetchTicketsSince(sub, startTimeUnix, wantedBrandIds);
     const officeTags = await fetchUserFieldTags(sub, OFFICE_FIELD_ID, OFFICE_TAGS_FALLBACK);
     const roleTags = await fetchUserFieldTags(sub, ROLE_FIELD_ID, ROLE_TAGS_FALLBACK);
+    const { tickets, capped } = await fetchTicketsSince(sub, startTimeUnix, wantedBrandIds, officeTags, roleTags);
     const userMap = await resolveUsers(sub, tickets.map((t) => t.requesterId), officeTags, roleTags);
     const vertMap = await resolveVerticalOptions(sub);
 
@@ -192,8 +200,8 @@ exports.handler = async (event) => {
       if (!quarterSet.has(qk)) continue;            // outside display window
       const brand = brandMap[t.brandId];
       const u = userMap[t.requesterId] || {};
-      const office = u.office || 'unspecified';
-      const role = u.role || 'unspecified';
+      const office = u.office || t.ticketOffice || 'unspecified';
+      const role = u.role || t.ticketRole || 'unspecified';
       const key = `${brand}|${qk}|${office}|${role}`;
       cells[key] = (cells[key] || 0) + 1;
       const requester = u.name || `User ${t.requesterId}`;
