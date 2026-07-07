@@ -83,7 +83,7 @@ async function fetchTicketsSince(sub, startTimeUnix, wantedBrandIds) {
       } else if (Array.isArray(t.tags)) {
         verticals = t.tags.filter((tg) => /^vert_/.test(tg));
       }
-      out.push({ brandId: t.brand_id, requesterId: t.requester_id, createdAt: t.created_at, verticals });
+      out.push({ id: t.id, subject: t.subject || '(no subject)', brandId: t.brand_id, requesterId: t.requester_id, createdAt: t.created_at, verticals });
     }
     pages++;
     if (data.end_of_stream || !data.after_cursor) break;
@@ -105,7 +105,7 @@ async function resolveUsers(sub, ids) {
     const data = await res.json();
     for (const u of data.users || []) {
       const uf = u.user_fields || {};
-      map[u.id] = { office: uf[OFFICE_FIELD] || null, role: uf[ROLE_FIELD] || null };
+      map[u.id] = { office: uf[OFFICE_FIELD] || null, role: uf[ROLE_FIELD] || null, name: u.name || null };
     }
   }
   console.log(`resolved ${Object.keys(map).length} requesters`);
@@ -151,6 +151,8 @@ exports.handler = async (event) => {
 
     // bucket: brand -> quarter -> office -> role -> count
     const cells = {};
+    // drill-down: same key -> list of tickets in that bucket
+    const cellTix = {};
     // parallel bucket for vertical: brand -> quarter -> vertical -> count
     // (Vertical is a multi-select, so one ticket can add to more than one vertical;
     //  vertical totals can therefore exceed the request count for a quarter.)
@@ -165,6 +167,8 @@ exports.handler = async (event) => {
       const role = u.role || 'unspecified';
       const key = `${brand}|${qk}|${office}|${role}`;
       cells[key] = (cells[key] || 0) + 1;
+      const requester = u.name || `User ${t.requesterId}`;
+      (cellTix[key] = cellTix[key] || []).push({ id: t.id, subject: t.subject, requester, requesterId: t.requesterId });
       counted++;
 
       // vertical bucketing
@@ -181,7 +185,7 @@ exports.handler = async (event) => {
     }
     const cellList = Object.entries(cells).map(([k, count]) => {
       const [brand, quarter, office, role] = k.split('|');
-      return { brand, quarter, office, role, count };
+      return { brand, quarter, office, role, count, tickets: cellTix[k] || [] };
     });
     const vcellList = Object.entries(vcells).map(([k, count]) => {
       const [brand, quarter, vertical] = k.split('|');
@@ -192,6 +196,7 @@ exports.handler = async (event) => {
       statusCode: 200, headers: CORS,
       body: JSON.stringify({
         ok: true, generatedAt: new Date().toISOString(),
+        subdomain: sub,
         brands: BRAND_NAMES, quarters,
         offices: [...new Set(cellList.map((c) => c.office))],
         roles: [...new Set(cellList.map((c) => c.role))],
