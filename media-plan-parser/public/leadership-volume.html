@@ -115,6 +115,28 @@ async function load(){
 function sum(cells){return cells.reduce((a,c)=>a+c.count,0);}
 // Measurement is the only "measurement" brand; everything else (Vevo Research, Vevo Insights) is the Insights line.
 function brandKey(b){return (b||'').toLowerCase().includes('measurement')?'measurement':'insights';}
+function escapeHtml(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+// Drill-down: list requesters (and their tickets) that fall into "unspecified" for the selected quarter.
+function unspecRows(){
+  const d=DATA;
+  const link=id=>d.subdomain?('https://'+d.subdomain+'.zendesk.com/agent/tickets/'+id):'#';
+  const qCells=d.cells.filter(c=>c.quarter===SELQ&&(c.office==='unspecified'||c.role==='unspecified'));
+  const byReq={};
+  qCells.forEach(c=>(c.tickets||[]).forEach(t=>{
+    const r=byReq[t.requesterId]||(byReq[t.requesterId]={name:t.requester,missing:new Set(),tix:[]});
+    if(c.office==='unspecified')r.missing.add('Office');
+    if(c.role==='unspecified')r.missing.add('Role');
+    r.tix.push(t);
+  }));
+  const reqs=Object.values(byReq).sort((a,b)=>b.tix.length-a.tix.length);
+  if(!reqs.length)return '<div class="note">No unspecified requests this quarter — every request is attributed to an office and role.</div>';
+  const rows=reqs.map(r=>{
+    const links=r.tix.map(t=>'<a href="'+link(t.id)+'" target="_blank" rel="noopener" title="'+escapeHtml(t.subject)+'">#'+t.id+'</a>').join(' ');
+    return '<tr><td>'+escapeHtml(r.name)+'</td><td>'+[...r.missing].join(' + ')+'</td><td style="text-align:center">'+r.tix.length+'</td><td class="tix">'+links+'</td></tr>';
+  }).join('');
+  return '<style>table.drill{width:100%;border-collapse:collapse;font-size:13px}table.drill th,table.drill td{padding:7px 10px;border-bottom:1px solid #e2ddd1;text-align:left;vertical-align:top}table.drill th{font-weight:600;color:#6b6455}table.drill td.tix a{margin-right:2px;white-space:nowrap}</style>'
+    +'<table class="drill"><thead><tr><th>Requester</th><th>Missing field</th><th>#</th><th>Tickets (open in Zendesk)</th></tr></thead><tbody>'+rows+'</tbody></table>';
+}
 
 function render(){
   const d=DATA;
@@ -151,6 +173,9 @@ function render(){
       +'<div class="chartbox"><div style="position:relative;height:'+chartH(d.offices.length)+'px"><canvas id="byOffice" role="img" aria-label="Requests by office"></canvas></div></div>'
       +'<div class="chartbox"><div style="position:relative;height:'+chartH(d.roles.length)+'px"><canvas id="byRole" role="img" aria-label="Requests by role"></canvas></div></div>'
     +'</div>'
+    +'<div class="section"><h2>Requesters to fix \u00b7 '+SELQ+'</h2>'
+      +'<div class="note">These requests show as \u201CUnspecified\u201D because the requester\u2019s Zendesk profile is missing the Sales Region and/or Role Level field. Fix the person\u2019s profile and <b>every</b> request they\u2019ve ever made \u2014 including closed ones \u2014 re-buckets automatically on the next load.</div></div>'
+    +'<div class="chartbox">'+unspecRows()+'</div>'
     +(d.verticalCells?(
       '<div class="section"><h2>Requests by vertical \u00b7 '+SELQ+'</h2>'
       +'<div class="legend"><span class="chip"><span class="dot" style="background:'+C.insights+'"></span>Insights</span>'
