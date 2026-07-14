@@ -69,7 +69,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
-const FUNCTION_URL="https://mediaplanparser.netlify.app/.netlify/functions/request-volume";
+const FUNCTION_URL="https://xgs5cujoibxezkz2jw2qsxqlum0ngcux.lambda-url.us-east-1.on.aws/";
 const $=(id)=>document.getElementById(id);
 const C={insights:'#2a78d6',measurement:'#1baf7a'};
 const OFFICE_ORDER=['east_coast','midwest','west_coast','international','unspecified'];
@@ -147,6 +147,8 @@ function render(){
   const total=sum(qCells);
   const ins=sum(qCells.filter(c=>brandKey(c.brand)==='insights'));
   const meas=sum(qCells.filter(c=>brandKey(c.brand)==='measurement'));
+  const lm=qCells.reduce((a,c)=>a+(c.lm||0),0);
+  const lmPct=total>0?Math.round((lm/total)*100):0;
   // prior quarter delta
   const qi=d.quarters.indexOf(SELQ); const prevQ=qi>0?d.quarters[qi-1]:null;
   const prevTotal=prevQ?sum(d.cells.filter(c=>c.quarter===prevQ)):null;
@@ -163,6 +165,7 @@ function render(){
       +'<div class="card"><div class="lbl">'+SELQ+' total</div><div class="num">'+total.toLocaleString()+'</div>'+deltaHtml+'</div>'
       +'<div class="card"><div class="lbl">Insights</div><div class="num" style="color:'+C.insights+'">'+ins.toLocaleString()+'</div></div>'
       +'<div class="card"><div class="lbl">Measurement</div><div class="num" style="color:'+C.measurement+'">'+meas.toLocaleString()+'</div></div>'
+      +'<div class="card"><div class="lbl">Last minute (&lt;48h)</div><div class="num" style="color:var(--accent)">'+lm.toLocaleString()+'</div><div class="delta flat">'+lmPct+'% of '+SELQ+' requests</div></div>'
     +'</div>'
     +'<div class="section"><h2>Volume by quarter</h2>'
       +'<div class="legend"><span class="chip"><span class="dot" style="background:'+C.insights+'"></span>Insights</span>'
@@ -200,10 +203,10 @@ function drawTrend(){
   if(charts.trend)charts.trend.destroy();
   charts.trend=new Chart($('trend'),{type:'bar',
     data:{labels:d.quarters,datasets:[
-      {label:'Insights',data:ins,backgroundColor:C.insights,borderRadius:4,stack:'s'},
-      {label:'Measurement',data:meas,backgroundColor:C.measurement,borderRadius:4,stack:'s'}]},
+      {label:'Insights',data:ins,backgroundColor:C.insights,borderRadius:4},
+      {label:'Measurement',data:meas,backgroundColor:C.measurement,borderRadius:4}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,ticks:{precision:0},grid:{color:'#e2ddd1'}}}}});
+      scales:{x:{stacked:false,grid:{display:false}},y:{stacked:false,ticks:{precision:0},grid:{color:'#e2ddd1'}}}}});
 }
 function drawBreakdowns(){
   const d=DATA; const qCells=d.cells.filter(c=>c.quarter===SELQ);
@@ -223,10 +226,10 @@ function mkStacked(id,keys,cells,dim){
   if(charts[id])charts[id].destroy();
   charts[id]=new Chart($(id),{type:'bar',
     data:{labels:keys.map(prettify),datasets:[
-      {label:'Insights',data:ins,backgroundColor:C.insights,borderRadius:4,stack:'s'},
-      {label:'Measurement',data:meas,backgroundColor:C.measurement,borderRadius:4,stack:'s'}]},
+      {label:'Insights',data:ins,backgroundColor:C.insights,borderRadius:4},
+      {label:'Measurement',data:meas,backgroundColor:C.measurement,borderRadius:4}]},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{x:{stacked:true,ticks:{precision:0},grid:{color:'#e2ddd1'}},y:{stacked:true,grid:{display:false}}}}});
+      scales:{x:{stacked:false,ticks:{precision:0},grid:{color:'#e2ddd1'}},y:{stacked:false,grid:{display:false}}}}});
 }
 
 $('secretGo').onclick=()=>{const v=$('secretIn').value.trim();if(!v)return;sessionStorage.setItem('mp_secret',v);$('gate').style.display='none';load();};
